@@ -7,6 +7,7 @@ Reusable skills for [Claude Code](https://docs.anthropic.com/en/docs/claude-code
 | Skill | What it does |
 |-------|-------------|
 | [understand-repo](./understand-repo/) | Deeply understand any public GitHub repo using DeepWiki MCP + GitHub CLI. Understand implementations, debug dependency behavior, evaluate libraries, or extract self-contained code. |
+| [remember](./remember/) | Session continuity — document decisions, context, and learnings in CLAUDE.md and CHANGELOG.md so the next session can continue without re-deriving understanding. |
 
 ## Install
 
