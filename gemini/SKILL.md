@@ -1,56 +1,152 @@
 ---
 name: gemini
-description: "Ask Gemini for a second opinion with full conversation context. Runs the Gemini CLI (`gemini -p`) with conversation context and the user's question. Use when asked to 'ask gemini', 'gemini review', 'get gemini opinion', or '/gemini'."
+version: 3.0.0
+description: "Invoke Gemini CLI as a peer AI agent — reviews, implementation, fixes, research, analysis, or any task. Full project access by default; sandboxed for reviews/analysis. Use for '/gemini', 'ask gemini', 'gemini review', 'gemini implement', 'gemini fix', 'gemini research', 'gemini deep-research', or any second opinion."
+argument-hint: "<task> | review <target> | implement <scope> | fix <issues> | research <topic> | deep-research <topic> | resume <topic> | -m <model> | models | help"
 allowed-tools: Read, Bash, Grep, Glob
+context: session
 ---
 
-# Gemini Second Opinion
+Arguments: **"$ARGUMENTS"**
 
-**ACTION REQUIRED: You MUST execute the bash command below using the Bash tool. Loading this skill does NOTHING by itself — you must run the `gemini -p` command. Do NOT just acknowledge these instructions.**
+## Special Commands
 
-## What to Do
+If empty or "help": `bash ~/.claude/skills/gemini/scripts/help.sh` → output verbatim, stop.
+If "models": Read `~/.claude/skills/shared/models.yaml` (gemini section) → formatted table with current config highlighted, stop.
 
-1. Compile the conversation context (exchanges, code discussed, decisions made) into a concise summary
-2. Replace `[INSERT FULL CONVERSATION CONTEXT HERE]` with the actual context
-3. Replace `$ARGUMENTS` with the user's question/request
-4. **Execute the bash command below using the Bash tool** (run in background — takes 30-120s)
-5. Present Gemini's response and note differences from your own view
+## Execution
 
-## Command Template
+1. **Show current model:** `grep '"name"' ~/.gemini/settings.json | head -1`
+2. **Extract model override** if `-m <model>` in arguments
+3. **Compile conversation context** — recent exchanges, code discussed, decisions made (keep concise)
+4. **Detect intent** from arguments and select settings from the table below
+5. **Compose prompt** using the building blocks
+6. **Assemble command** and run
 
-```bash
-mkdir -p ./gemini && gemini -p "<instructions>
-You have full read access to browse and analyze this entire project. However, you may ONLY create or modify files in the ./gemini/ directory. Create this directory if needed. Never write files elsewhere in this project.
+### Intent Detection
+
+| Intent | Trigger words | Permission | Approval Mode | Model | Run |
+|--------|--------------|------------|---------------|-------|-----|
+| **Review** | "review" | Sandbox | `auto_edit` | Flagship | bg |
+| **Implement** | "implement", "build", "write", "create", "add" | Unrestricted | `auto_edit` | Flagship | bg |
+| **Fix** | "fix", "patch", "resolve", "address" | Unrestricted | `auto_edit` | Flagship | bg |
+| **Research** | "search", "research", "google" (not "deep") | Sandbox | `yolo` | Flash (search grounding) | bg |
+| **Deep Research** | "deep research", "thorough", "comprehensive analysis" | Own folder | `yolo` | Flash | bg |
+| **Resume** | "continue", "follow up", "resume", "go deeper" | Previous folder | `yolo` | Flash | bg |
+| **Analyze** | "analyze", "investigate", "audit", "check", "compare" | Sandbox | `auto_edit` | Flagship | bg |
+| **General** | anything else | Unrestricted | `auto_edit` | Flagship | bg |
+
+**Key principle:** Default is **unrestricted**. Sandbox only when the task doesn't need source edits (reviews, analysis, research). The orchestrator can override — e.g., `/gemini implement [scope]` always gets unrestricted access.
+
+**Model selection:** Read `~/.claude/skills/shared/models.yaml` for current IDs. Flagship = default model in settings. Flash = model with `search_grounding: true` and `tier: fast`.
+
+### Compose the Prompt
+
+**Permission block** (pick one based on intent):
+- **Unrestricted:** `You have full read and write access to this project.`
+- **Sandbox:** `You have full read access to this project. Do not modify existing project source files.`
+
+**Output block** (independent of permission — controls where NEW artifacts go):
+- **You (the calling Claude Code instance) decide the output path.** Consider your context: Are you in a worktree? An orchestrator review round? A standalone invocation? Choose a path that makes sense.
+- Examples: `Save your review to ./gemini/auth-review.md`, `Write findings to ./docs/reviews/api-audit.md`
+- **Be explicit when it matters** — for reviews, orchestrated builds, or worktree sessions, always specify the path. For casual questions or general tasks, omit (Gemini writes wherever it sees fit).
+- This only controls where *new files* are created, not which *existing files* can be edited (that's the permission block's job).
+
+**Role block** (optional — add only when intent benefits from framing):
+- **Review:** `You are reviewing code changes for correctness, performance, security, and maintainability. Flag actionable issues with file:line citations. Categorize findings as P0 (critical), P1 (major), or P2 (minor).`
+- **Implement/Fix:** Include specific scope, files, and what "done" looks like. Add `Run the project's test suite after implementation and report pass/fail.` when appropriate.
+- **Research:** `Search the web and provide a well-sourced answer. Cite sources.`
+- **General/Analyze:** No special role needed — the task description is sufficient.
+
+**Assemble:**
+```
+<instructions>
+[PERMISSION BLOCK]
+[OUTPUT BLOCK — if caller specified a path]
+[ROLE BLOCK — if applicable]
 </instructions>
 
 <context>
-[INSERT FULL CONVERSATION CONTEXT HERE]
+[CONVERSATION CONTEXT]
 </context>
 
-User is asking for your perspective: $ARGUMENTS" \
-  --approval-mode auto_edit \
-  2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT). Error summary in ./gemini/errors.log"; { echo "=== Exit code: $GEMINI_EXIT ==="; echo ""; echo "=== Error lines ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid' ./gemini/stderr.log | tail -20; echo ""; echo "=== Last 30 lines ==="; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
+[TASK FROM ARGUMENTS]
 ```
 
-## After Completion
+### Command Template
+
+```bash
+mkdir -p ./gemini && gemini [-m MODEL] -p "[ASSEMBLED PROMPT]" \
+  --approval-mode [auto_edit|yolo] \
+  2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT)"; { echo "=== Exit $GEMINI_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota\|429' ./gemini/stderr.log | tail -20; echo ""; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
+```
+
+Run in **background** — use `run_in_background: true` on the Bash tool.
+
+### Concrete Examples
+
+**Review (sandbox, flagship model):**
+```bash
+mkdir -p ./gemini && gemini -p "<instructions>
+You have full read access to this project. Do not modify existing project source files.
+Save your review report as ./docs/reviews/batch-delete-review.md
+You are reviewing code changes for correctness, performance, security, and maintainability. Flag actionable issues with file:line citations. Categorize findings as P0 (critical), P1 (major), or P2 (minor).
+</instructions>
+
+<context>
+We just implemented a batch delete feature. Changes span src/services/batch/ and tests/batch.test.ts.
+</context>
+
+Review the batch delete implementation for correctness and security." \
+  --approval-mode auto_edit \
+  2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT)"; { echo "=== Exit $GEMINI_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota\|429' ./gemini/stderr.log | tail -20; echo ""; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
+```
+
+**Implement (unrestricted, flagship model):**
+```bash
+mkdir -p ./gemini && gemini -p "<instructions>
+You have full read and write access to this project.
+Implement the changes described below. Run npm test after implementation and report pass/fail.
+</instructions>
+
+<context>
+We need to add a tag merging feature. Design: docs/design/tag-merge.md. Existing tag code: src/models/tag.ts
+</context>
+
+Implement the merge_tags function per the design doc. Add it to the exports in index.ts." \
+  --approval-mode auto_edit \
+  2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT)"; { echo "=== Exit $GEMINI_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota\|429' ./gemini/stderr.log | tail -20; echo ""; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
+```
+
+**Research (sandbox, flash model — read `~/.claude/skills/shared/models.yaml` for current flash model ID):**
+```bash
+mkdir -p ./gemini && gemini -m gemini-3-flash-preview -p "<instructions>
+You have full read access to this project. Do not modify existing project source files.
+Search the web and provide a well-sourced answer. Cite sources.
+</instructions>
+
+<context>
+Building an MCP server on Cloudflare Workers with OAuth.
+</context>
+
+Research the current state of MCP OAuth patterns in 2026. What auth flows do production MCP servers use?" \
+  --approval-mode yolo \
+  2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT)"; { echo "=== Exit $GEMINI_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota\|429' ./gemini/stderr.log | tail -20; echo ""; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
+```
+
+### Deep Research & Resume
+
+For deep research, resume, and follow-up: **read `~/.claude/skills/gemini/references/commands.md`** for the full 6-phase pipeline template, folder setup, and session resume patterns. These have their own workflow (`~/deep-searches/` folders, `--approval-mode yolo`, flash model, `-r <index>` resume).
+
+### After Completion
 
 - Present Gemini's response to the user
 - Note any differences from your own analysis
-- Check `./gemini/` for any artifacts Gemini created
+- Check for artifacts at the output path you specified (if any)
+- If failed, read `./gemini/errors.log` for diagnostics
 
 ## Error Handling
 
-**On failure:** The command writes a one-line summary to stdout and saves full error analysis to `./gemini/errors.log`. Read that file to diagnose. Common failures: auth/API key issues, model not available, prompt too long, rate limits.
-
-**On success:** Both `stderr.log` and `errors.log` are just progress noise — safe to ignore.
-
-## Configuration
-
-- Uses the default model from `~/.gemini/settings.json`
-- **For web search research**: always use `-m gemini-3-flash-preview` (faster, grounded search built-in)
-- **For code reviews**: use default model (higher reasoning capability)
-- Override with `-m <model>`, e.g. `gemini -m gemini-3-flash-preview`
-- `--approval-mode auto_edit` allows Gemini to write files without interactive approval
-- Gemini does not remember past requests — include all relevant context every time
-- If in a worktree, run from the worktree root so Gemini analyzes YOUR working code
-- Gemini can READ files anywhere but should only WRITE to `./gemini/`
+- **Stale logs:** `errors.log`/`stderr.log` persist across runs. Check `ps aux | grep "gemini -p"` before assuming failure — a running process means logs are stale.
+- **Common failures:** 429 rate limit (most common), auth (`gemini auth login`), model unavailable, prompt too long.
+- **Rate limits:** Max 2-3 concurrent sessions. 5+ cascade-fail with 429 errors.
