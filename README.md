@@ -10,6 +10,7 @@ Reusable skills for [Claude Code](https://docs.anthropic.com/en/docs/claude-code
 | [remember](./remember/) | Session continuity — document decisions, context, and learnings in CLAUDE.md and CHANGELOG.md so the next session can continue without re-deriving understanding. |
 | [gemini](./gemini/) | Ask Gemini for a second opinion with full conversation context. Shells out to the Gemini CLI with sandboxed writes. |
 | [codex](./codex/) | Ask OpenAI Codex for a second opinion with full conversation context. Includes general, code review, and resume modes. |
+| [cf-account-status](./cf-account-status/) | Cloudflare account dashboard — Workers, Durable Objects (SQL rows, OOM, instance sprawl), D1, R2, KV, Queues health + estimated spend. Uses the CF API MCP server (OAuth, no tokens). |
 
 ## Install
 
