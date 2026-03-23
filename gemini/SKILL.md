@@ -11,8 +11,8 @@ Arguments: **"$ARGUMENTS"**
 
 ## Special Commands
 
-If empty or "help": `bash ~/.claude/skills/gemini/scripts/help.sh` → output verbatim, stop.
-If "models": Read `~/.claude/skills/shared/models.yaml` (gemini section) → formatted table with current config highlighted, stop.
+If empty or "help": Show usage summary (modes: review, implement, fix, research, deep-research, resume, analyze, general), stop.
+If "models": `grep '"name"' ~/.gemini/settings.json | head -1` → show current model, stop.
 
 ## Execution
 
@@ -38,7 +38,7 @@ If "models": Read `~/.claude/skills/shared/models.yaml` (gemini section) → for
 
 **Key principle:** Default is **unrestricted**. Sandbox only when the task doesn't need source edits (reviews, analysis, research). The orchestrator can override — e.g., `/gemini implement [scope]` always gets unrestricted access.
 
-**Model selection:** Read `~/.claude/skills/shared/models.yaml` for current IDs. Flagship = default model in settings. Flash = model with `search_grounding: true` and `tier: fast`.
+**Model selection:** Flagship = default model in `~/.gemini/settings.json`. Flash = use `-m gemini-<version>-flash` for research with search grounding. Check `gemini models` for available IDs.
 
 ### Compose the Prompt
 
@@ -47,9 +47,9 @@ If "models": Read `~/.claude/skills/shared/models.yaml` (gemini section) → for
 - **Sandbox:** `You have full read access to this project. Do not modify existing project source files.`
 
 **Output block** (independent of permission — controls where NEW artifacts go):
-- **You (the calling Claude Code instance) decide the output path.** Consider your context: Are you in a worktree? An orchestrator review round? A standalone invocation? Choose a path that makes sense.
+- **You (the calling Claude Code instance) decide the output path.** Consider your context: Are you on a feature branch? A code review? A standalone question? Choose a path that makes sense.
 - Examples: `Save your review to ./gemini/auth-review.md`, `Write findings to ./docs/reviews/api-audit.md`
-- **Be explicit when it matters** — for reviews, orchestrated builds, or worktree sessions, always specify the path. For casual questions or general tasks, omit (Gemini writes wherever it sees fit).
+- **Be explicit when it matters** — for reviews or multi-step builds, always specify the path. For casual questions, omit (Gemini writes wherever it sees fit).
 - This only controls where *new files* are created, not which *existing files* can be edited (that's the permission block's job).
 
 **Role block** (optional — add only when intent benefits from framing):
@@ -118,7 +118,7 @@ Implement the merge_tags function per the design doc. Add it to the exports in i
   2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT)"; { echo "=== Exit $GEMINI_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota\|429' ./gemini/stderr.log | tail -20; echo ""; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
 ```
 
-**Research (sandbox, flash model — read `~/.claude/skills/shared/models.yaml` for current flash model ID):**
+**Research (sandbox, flash model):**
 ```bash
 mkdir -p ./gemini && gemini -m gemini-3-flash-preview -p "<instructions>
 You have full read access to this project. Do not modify existing project source files.
@@ -126,17 +126,17 @@ Search the web and provide a well-sourced answer. Cite sources.
 </instructions>
 
 <context>
-Building an MCP server on Cloudflare Workers with OAuth.
+Building a REST API with authentication and rate limiting.
 </context>
 
-Research the current state of MCP OAuth patterns in 2026. What auth flows do production MCP servers use?" \
+Research current best practices for API rate limiting in distributed systems. What patterns do production APIs use?" \
   --approval-mode yolo \
   2>./gemini/stderr.log; GEMINI_EXIT=$?; if [ $GEMINI_EXIT -ne 0 ]; then echo "GEMINI FAILED (exit $GEMINI_EXIT)"; { echo "=== Exit $GEMINI_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota\|429' ./gemini/stderr.log | tail -20; echo ""; tail -30 ./gemini/stderr.log; } > ./gemini/errors.log; fi
 ```
 
 ### Deep Research & Resume
 
-For deep research, resume, and follow-up: **read `~/.claude/skills/gemini/references/commands.md`** for the full 6-phase pipeline template, folder setup, and session resume patterns. These have their own workflow (`~/deep-searches/` folders, `--approval-mode yolo`, flash model, `-r <index>` resume).
+For deep research: create a folder in `~/deep-searches/<topic>/`, run Gemini with `--approval-mode yolo` and flash model. Resume with `-r <index>`. These are longer multi-turn sessions that accumulate research in their own workspace.
 
 ### After Completion
 

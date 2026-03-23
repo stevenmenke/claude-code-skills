@@ -11,8 +11,8 @@ Arguments: **"$ARGUMENTS"**
 
 ## Special Commands
 
-If empty or "help": `bash ~/.claude/skills/codex/scripts/help.sh` → output verbatim, stop.
-If "models": Read `~/.claude/skills/shared/models.yaml` (codex section) → formatted table with current config highlighted, stop.
+If empty or "help": Show usage summary (modes: review, implement, fix, analyze, resume, general), stop.
+If "models": `grep '^model' ~/.codex/config.toml` → show current model, stop.
 
 If "resume <follow-up>":
 ```bash
@@ -47,9 +47,9 @@ Present response, stop.
 - **Sandbox:** `You have full read access to this project. Do not modify existing project source files.`
 
 **Output block** (independent of permission — controls where NEW artifacts go):
-- **You (the calling Claude Code instance) decide the output path.** Consider your context: Are you in a worktree? An orchestrator review round? A standalone invocation? Choose a path that makes sense.
+- **You (the calling Claude Code instance) decide the output path.** Consider your context: Are you on a feature branch? A code review? A standalone question? Choose a path that makes sense.
 - Examples: `Save your review to ./codex/auth-review.md`, `Write findings to ./docs/reviews/api-audit.md`
-- **Be explicit when it matters** — for reviews, orchestrated builds, or worktree sessions, always specify the path. For casual questions or general tasks, omit (Codex writes wherever it sees fit).
+- **Be explicit when it matters** — for reviews or multi-step builds, always specify the path. For casual questions, omit (Codex writes wherever it sees fit).
 - This only controls where *new files* are created, not which *existing files* can be edited (that's the permission block's job).
 
 **Role block** (optional — add only when intent benefits from framing):
@@ -130,10 +130,10 @@ You have full read and write access to this project.
 </instructions>
 
 <context>
-Working on a Cloudflare Workers app with Durable Objects for per-user storage.
+Working on a Node.js API with PostgreSQL and Redis caching.
 </context>
 
-What are the tradeoffs between using DO SQLite vs D1 for user settings?" \
+What are the tradeoffs between connection pooling approaches for serverless PostgreSQL?" \
   2>./codex/stderr.log; CODEX_EXIT=$?; if [ $CODEX_EXIT -ne 0 ]; then echo "CODEX FAILED (exit $CODEX_EXIT)"; { echo "=== Exit $CODEX_EXIT ==="; grep -i 'error\|fatal\|fail\|denied\|unauthorized\|refused\|timeout\|invalid\|limit\|quota' ./codex/stderr.log | tail -20; echo ""; tail -30 ./codex/stderr.log; } > ./codex/errors.log; fi
 ```
 
@@ -194,7 +194,7 @@ This continues from the session's last checkpoint with full context preserved. U
 
 ### Implementation Session Pattern
 
-When running multi-session builds (like `/orchestrate auto-build`), record the Codex session ID after launching each implementation session. Format:
+When running multi-session builds, record the Codex session ID after launching each implementation session. Format:
 
 ```
 Session 1: 019ccf22-907c-7843-8ce6-eb27f6da350c (Core write architecture)
